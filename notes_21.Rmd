@@ -1,0 +1,331 @@
+---
+title: "Linear regression - model selection and overfitting"
+author: ""
+date: ""
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      comment = "#>", highlight = TRUE, error = TRUE,
+                      fig.align = "center")
+```
+
+## Main ideas
+
+- Determine how to choose the "best" model from a set of models
+
+- Splitting data for better predictions in the future
+
+- Understand the basic strategy for regression analysis
+
+## Packages
+
+```{r packages}
+library(tidyverse)
+library(broom)
+library(patchwork)
+library(fivethirtyeight)
+library(olsrr)
+```
+
+## Data
+
+```{r load_data}
+air_quality <- read.csv("data/air_quality.csv")
+```
+
+# Notes
+
+## A quick review of multiple regression
+
+Population model:
+
+$$y = \beta_0 + \beta_1~x_1 + \beta_2~x_2 + \cdots + \beta_k~x_k +\epsilon$$
+
+Sample model that we use to estimate the population model:
+  
+$$\hat{y} = b_0 + b_1~x_1 + b_2~x_2 + \cdots + b_k~x_k$$
+ 
+- In multiple regression, in addition to interpreting main effects, we should 
+  consider whether there is an interactive effect.
+  
+- When assessing model fit, the adjusted $R^2$ is preferable to the $R^2$ 
+  because of the penalty assessed for including extra explanatory variables 
+  that are not strong predictors of the level of the response variable.
+  
+To perform statistical inference, we need to ensure certain conditions are
+satisfied. These are:
+
+- Linearity: The relationship between response and predictor(s) is linear
+- Independence: The residuals are independent
+- Normality: The residuals are nearly normally distributed
+- Equal Variance: The residuals have constant variance
+  
+These can be assessed using diagnostic plots that involve the residuals from
+the fitted model. There are fixes if some of the assumptions are violated.
+  
+Another important consideration with multiple regression is multicollinearity.
+If the predictors are highly correlated
+
+## Air quality fit and diagnostics
+
+```{r mr_1}
+mr_1 <- lm(Ozone ~ Solar.R + Wind + Temp, data = airquality)
+tidy(mr_1)
+```
+
+```{r mr_1_aug}
+mr_1_aug <- augment(mr_1)
+```
+
+```{r mr_1_independence_check}
+p1 <- ggplot(mr_1_aug, aes(x = seq(nrow(mr_1_aug)), y = .resid)) + 
+  geom_point() + 
+  labs(x = "Index", y = "Residual value") +
+  theme_minimal()
+```
+
+```{r mr_1_var_lin}
+p2 <- ggplot(mr_1_aug, mapping = aes(x = .fitted, y = .resid)) +
+  geom_point() + 
+  geom_hline(yintercept = 0, color = "red", lty = 2) +
+  labs(x = "Predicted Price", y = "Residual value") +
+  theme_minimal()
+```
+
+```{r mr_1_normality_1}
+p3 <- ggplot(mr_1_aug, mapping = aes(x = .resid)) +
+  geom_histogram(binwidth = 10, fill = "pink", color = "grey90") + 
+  labs(x = "Residuals", y = "Count") +
+  theme_minimal()
+```
+
+```{r mr_1_normality_2}
+p4 <- ggplot(mr_1_aug, mapping = aes(sample = .resid)) +
+  stat_qq() + 
+  stat_qq_line() +
+  theme_minimal()
+```
+
+```{r all_diagnostic_plots}
+(p1 + p2) / (p3 + p4)
+```
+
+Comment on what you observe with the above plots.
+
+Another plot we can examine is a histogram of the response. 
+
+```{r ozone_histogram}
+ggplot(mr_1_aug, mapping = aes(x = Ozone)) +
+  geom_histogram(binwidth = 10, fill = "pink", color = "grey90") + 
+  labs(x = "Ozone", y = "Count") +
+  theme_minimal()
+```
+
+The extremely right skewed distribution suggests that a log transformation may 
+be useful to make this look more "normal".
+
+- In R, function `log()` is by default the natural log.
+
+```{r log_ozone_histogram}
+
+```
+
+## Log tranformation interpretations
+
+```{r log_mr_2}
+
+```
+
+$$ {log(\widehat{Ozone})} = -0.262 + 0.003~SolarR - 0.062~Wind + 0.049~Temp$$
+
+All else held constant, for every additional degree Fahrenheit of temperature, 
+the log ozone is expected to be higher, on average, by 0.049, holding all else 
+constant.
+
+#### Working with logs
+
+- Subtraction and logs: $log(a) − log(b) = log(a / b)$
+
+- Natural logarithm: $e^{log(x)} = x$
+
+- We can use these identities to "undo" the log transformation
+
+Put this back on regular scale:
+
+$$\begin{align}0.049 &= \text{Slope}\\
+0.049 &= \dfrac{log(\text{Ozone at Temp + 1}) - log(\text{Ozone at Temp})}{1}\\
+0.049 &=log\left(\dfrac{\text{Ozone at Temp + 1}}{\text{Ozone at Temp}}\right)\\
+e^{0.049} &=e^{log\left(\frac{\text{Ozone at Temp + 1}}{\text{Ozone at Temp}}\right)}\\
+1.05 &\approx \dfrac{\text{Ozone at Temp + 1}}{\text{Ozone at Temp}}
+\end{align}$$
+
+For every one degree increase in temperature, ozone is expected to be higher,
+on average, by a factor of $\text{exp}(0.049) = 1.05$. We **multiply** instead 
+of add.
+
+To do this in R
+
+```{r regular_scale}
+
+```
+
+#### Aside: what to do when y is 0
+
+In some cases the value of the response variable might be 0. The trick to handle
+this is to add a very very small number to the value of the response variable 
+for these cases so that the `log` function can still be applied.
+
+```{r log_plus_epsilon}
+log(0 + 0.00001)
+```
+
+### Recap
+
+- Non-constant variance is one of the most common model violations, however it 
+  is usually fixable by transforming the response (y) variable.
+
+- The most common transformation when the response variable is right skewed is 
+  the log transform: $log(y)$, especially useful when the response variable is 
+  (extremely) right skewed.
+
+- When using a log transformation on the response variable the interpretation of 
+  the slope changes: *"For each unit increase in x, y is expected to multiply 
+  by a factor of $e^{b_k}$."*
+
+- Another useful transformation is the square root: $\sqrt{y}$, especially 
+  useful when the response variable is counts.
+
+## Model selection
+
+- So far, you have been told which variables to include in the model. But 
+  how do researchers decide which variables to include in a model?
+
+- We may decide to include an explanatory variable in a model to examine 
+  whether a significant relationship exists between the explanatory and response 
+  variable. 
+
+- We also use models for prediction. While it may seem tempting to include as 
+  many variables as possible in a model, including variables that may not be 
+  important can reduce the accuracy of predictions.
+
+### Terminology
+
+- The model with all of the variables is called the **full model**. But the 
+  full model does not always give you the best prediction. 
+
+- You may prune variables from a model in order to achieve a **parsimonious** 
+  model that gives you a more accurate predictions.
+
+### Backward elimination and forward selection
+
+#### Backwards elimination
+
+- Start with a **full** model (including all candidate explanatory variables 
+  and all candidate interactions).
+
+- Remove one variable at a time, and select the model with the highest 
+  adjusted $R^2$.
+
+- Continue until adjusted $R^2$ does not increase.
+
+#### Forward selection
+
+- Start with an **empty** model.
+
+- Add one variable (or interaction effect) at a time, and select the model with 
+  the highest adjusted $R^2$.
+
+- Continue until adjusted $R^2$ does not increase.
+
+
+#### Model selection and interaction effects
+
+If an interaction is included in the model, the main effects of both of
+those variables must also be in the model.
+
+If a main effect is not in the model, then its interaction should not be 
+in the model.
+  
+### Example
+
+#### Backwards elimination
+
+Fit our "full" model
+
+```{r backwards_elimination_full_model}
+
+```
+
+Do backwards elimination to find our "best" model
+
+```{r backwards_elimination}
+
+
+```
+
+#### Forward selection
+
+We need to fit a full model first for `ols_step_forward_p()` so it knows
+which variables to consider. However, the function begins with an "empty"
+model when initiating the forward selection algorithm.
+
+```{r forward_selection_fit_full_model}
+
+```
+
+Do forward selection to find our "best" model
+
+```{r forward_selection}
+
+
+```
+
+## Model overfitting 
+
+- Getting a high adjusted $R^2$ value means that you have a model that explains 
+  a lot of the variation in the dependent variable. 
+
+- However, there is such a thing as having a model that fits the data *too well.*
+
+- When a model explains the data you have very well, but doesn't generalize well 
+  to out-of-sample data you may have a problem of **overfitting**.
+  
+*Doing this will be optional for your project.*
+
+### Training and testing sets
+
+- One thing we can do to address the issue of overfitting is to split our data 
+  into training and testing datasets.
+
+- We can build our model with the training data and then see how well it 
+  generalizes to the testing data.
+
+## Strategy for regression analysis
+
+1. Exploratory data analysis
+
+2. Consider possible interaction effects
+
+3. Develop one or more tentative regression models
+
+   a. Is one or more of the models suitable for the data?
+   b. If not, revise (transform and/or scale variables) and develop new models
+
+
+4. Identify the most suitable model
+
+5. Confirm assumptions are satisfied by doing a final examination of diagnostic
+   plots
+   
+   a. If confirmed, go to step 6
+   b. If not confirmed, further revise or abandon the linear model build
+
+6. Make inferences on the basis of the regression model
+
+7. Make predictions on the basis of the regression model
+
+
